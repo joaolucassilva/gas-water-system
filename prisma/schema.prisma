@@ -1,0 +1,163 @@
+// Prisma Schema para Revenda de Gás e Água (GLP / Mineral)
+// REGRA: Valores monetários armazenados como inteiros (Centavos) para precisão matemática pura.
+// Exemplo: R$ 110,00 -> 11000 centavos | R$ 16,50 -> 1650 centavos
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id                    String      @id @default(uuid())
+  name                  String
+  category              String      // 'gas' | 'water'
+  priceRefillCents      Int         // Preço Refil em centavos (ex: 11000 = R$ 110,00)
+  priceCompleteCents    Int         // Preço com Casco em centavos (ex: 29000 = R$ 290,00)
+  costPriceCents        Int         // Preço de Custo em centavos (ex: 7500 = R$ 75,00)
+  stockFull             Int         @default(0)
+  stockEmpty            Int         @default(0)
+  icon                  String?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  orderItems            OrderItem[]
+
+  @@map("products")
+}
+
+model NeighborhoodFee {
+  id                    String   @id @default(uuid())
+  name                  String   @unique
+  deliveryFeeCents      Int      @default(0) // Taxa de entrega em centavos (ex: 400 = R$ 4,00)
+  estimatedMinutes      Int      @default(20)
+
+  @@map("neighborhood_fees")
+}
+
+model Customer {
+  id                 String    @id @default(uuid())
+  name               String
+  phone              String    @unique
+  address            String
+  neighborhood       String
+  complement         String?
+  lastPurchaseDate   DateTime?
+  avgConsumptionDays Int       @default(35)
+  preferredProduct   String?
+  notes              String?   @db.Text
+  pendingEmpties     Int       @default(0) // Quantidade de cascos devidos
+  creditBalanceCents Int       @default(0) // Dívida em centavos (ex: 12800 = R$ 128,00)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  orders             Order[]
+  creditPayments     CreditPayment[]
+
+  @@map("customers")
+}
+
+model Driver {
+  id                   String        @id @default(uuid())
+  name                 String
+  phone                String
+  vehicle              String
+  active               Boolean       @default(true)
+  p13FullLoaded        Int           @default(0)
+  waterFullLoaded      Int           @default(0)
+  p13EmptyLoaded       Int           @default(0)
+  waterEmptyLoaded     Int           @default(0)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  orders               Order[]
+  settlements          DriverSettlementLog[]
+
+  @@map("drivers")
+}
+
+model Order {
+  id                   String      @id // Ex: PED-1001
+  customerId           String?
+  customerName         String
+  customerPhone        String
+  address              String
+  neighborhood         String
+  deliveryFeeCents     Int         @default(0) // Centavos
+  subtotalCents        Int         // Centavos
+  totalCents           Int         // Centavos
+  paymentMethod        String      // 'dinheiro' | 'pix' | 'debito' | 'credito' | 'a_prazo'
+  paymentStatus        String      @default("pendente") // 'pago' | 'pendente'
+  status               String      @default("pendente") // 'pendente' | 'em_rota' | 'entregue' | 'cancelado'
+  deliveryDriverId     String?
+  deliveryDriverName   String?
+  emptyBottlesReturned Int         @default(0)
+  emptyBottlesOwed     Int         @default(0)
+  changeForCents       Int?        // Troco para quanto em centavos (ex: 15000 = R$ 150,00)
+  notes                String?     @db.Text
+  createdAt            DateTime    @default(now())
+  deliveredAt          DateTime?
+
+  customer             Customer?   @relation(fields: [customerId], references: [id])
+  deliveryDriver       Driver?     @relation(fields: [deliveryDriverId], references: [id])
+  items                OrderItem[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id               String   @id @default(uuid())
+  orderId          String
+  productId        String
+  productName      String
+  quantity         Int
+  isCompleteBottle Boolean  @default(false)
+  unitPriceCents   Int      // Centavos
+
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product          Product  @relation(fields: [productId], references: [id])
+
+  @@map("order_items")
+}
+
+model CreditPayment {
+  id               String   @id @default(uuid())
+  customerId       String
+  amountPaidCents  Int      // Centavos
+  paymentMethod    String
+  createdAt        DateTime @default(now())
+
+  customer         Customer @relation(fields: [customerId], references: [id])
+
+  @@map("credit_payments")
+}
+
+model DriverSettlementLog {
+  id                  String   @id @default(uuid())
+  driverId            String
+  driverName          String
+  declaredCashCents   Int
+  declaredPixCents    Int
+  declaredCardCents   Int
+  declaredEmpties     Int
+  systemCashCents     Int
+  systemPixCents      Int
+  systemCardCents     Int
+  systemEmpties       Int
+  diffCashCents       Int
+  status              String   // 'CONCILIADO_PERFEITO' | 'DIVERGENCIA_ENCONTRADA'
+  closedAt            DateTime @default(now())
+
+  driver              Driver   @relation(fields: [driverId], references: [id])
+
+  @@map("driver_settlement_logs")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  action    String
+  details   String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@map("audit_logs")
+}
